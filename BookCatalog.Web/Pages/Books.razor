@@ -1,0 +1,220 @@
+﻿@page "/books"
+@using Microsoft.EntityFrameworkCore
+@using BookCatalog.Core.Models
+
+@inject BookCatalog.Core.Data.BookCatalogContext Db
+
+<h3>📚 Book Catalog</h3>
+
+<hr />
+
+<h4>Add a new book</h4>
+
+<div class="mb-3">
+    <label>Title:</label>
+    <input class="form-control" @bind="newBook.Title" />
+</div>
+
+<div class="mb-3">
+    <label>Year:</label>
+    <input class="form-control" type="number" @bind="newBook.Year" />
+</div>
+
+<div class="mb-3">
+    <label>Author:</label>
+    <select class="form-select" @bind="newBook.AuthorId">
+        <option value="0" disabled selected>-- Select Author --</option>
+        @foreach (var author in authors)
+        {
+            <option value="@author.Id">@author.Name</option>
+        }
+    </select>
+</div>
+
+<div class="mb-3">
+    <label>New Author Name (optional):</label>
+    <input class="form-control" @bind="newAuthorName" />
+</div>
+
+<div class="mb-3">
+    <label>Genre:</label>
+    <select class="form-select" @bind="newBook.GenreId">
+        <option value="0" disabled selected>-- Select Genre --</option>
+        @foreach (var genre in genres)
+        {
+            <option value="@genre.Id">@genre.Name</option>
+        }
+    </select>
+</div>
+
+<button class="btn btn-success" @onclick="AddBook">📂 Save</button>
+
+@if (isEditing)
+{
+    <hr />
+    <h4>Edit Book</h4>
+
+    <div class="mb-3">
+        <label>Title:</label>
+        <input class="form-control" @bind="editBook.Title" />
+    </div>
+    <div class="mb-3">
+        <label>Year:</label>
+        <input class="form-control" type="number" @bind="editBook.Year" />
+    </div>
+    <div class="mb-3">
+        <label>Author:</label>
+        <select class="form-select" @bind="editBook.AuthorId">
+            @foreach (var author in authors)
+            {
+                <option value="@author.Id">@author.Name</option>
+            }
+        </select>
+    </div>
+    <div class="mb-3">
+        <label>Genre:</label>
+        <select class="form-select" @bind="editBook.GenreId">
+            @foreach (var genre in genres)
+            {
+                <option value="@genre.Id">@genre.Name</option>
+            }
+        </select>
+    </div>
+
+    <button class="btn btn-primary" @onclick="SaveEdit">📂 Save Changes</button>
+    <button class="btn btn-secondary ms-2" @onclick="CancelEdit">Cancel</button>
+
+}
+
+<hr />
+<h4>All Books</h4>
+
+@if (books == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Year</th>
+                <th>Author</th>
+                <th>Genre</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var book in books)
+            {
+                <td>
+                    <button class="btn btn-outline-warning btn-sm me-1" title="Edit" @onclick="() => StartEdit(book)">
+                        Edit ✏
+                    </button>
+                    <button class="btn btn-outline-danger btn-sm" title="Delete" @onclick="() => DeleteBook(book.Id)">
+                        Delete 🗑
+                    </button>
+                </td>
+
+                <tr>
+                    <td>@book.Title</td>
+                    <td>@book.Year</td>
+                    <td>@book.Author?.Name</td>
+                    <td>@book.Genre?.Name</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+
+    private bool isEditing = false;
+    private BookCatalog.Core.Models.Book editBook = new();
+
+    private List<BookCatalog.Core.Models.Author> authors = new();
+    private List<BookCatalog.Core.Models.Genre> genres = new();
+
+    private List<BookCatalog.Core.Models.Book>? books;
+    private BookCatalog.Core.Models.Book newBook = new();
+    private string newAuthorName = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        authors = await Db.Authors.ToListAsync();
+        genres = await Db.Genres.ToListAsync();
+
+        books = await Db.Books
+            .Include(b => b.Author)
+            .Include(b => b.Genre)
+            .ToListAsync();
+    }
+
+    private async Task AddBook()
+    {
+        if (string.IsNullOrWhiteSpace(newBook.Title)) return;
+
+        if (!string.IsNullOrWhiteSpace(newAuthorName))
+        {
+            var newAuthor = new Author { Name = newAuthorName };
+            Db.Authors.Add(newAuthor);
+            await Db.SaveChangesAsync();
+            newBook.AuthorId = newAuthor.Id;
+        }
+
+        Db.Books.Add(newBook);
+        await Db.SaveChangesAsync();
+
+        newBook = new();
+        newAuthorName = string.Empty;
+        books = await Db.Books.Include(b => b.Author).Include(b => b.Genre).ToListAsync();
+        authors = await Db.Authors.ToListAsync();
+    }
+
+    private void StartEdit(Book book)
+    {
+        isEditing = true;
+        editBook = new Book
+        {
+            Id = book.Id,
+            Title = book.Title,
+            Year = book.Year,
+            AuthorId = book.AuthorId,
+            GenreId = book.GenreId
+        };
+    }
+
+    private async Task SaveEdit()
+    {
+        var bookToUpdate = await Db.Books.FindAsync(editBook.Id);
+        if (bookToUpdate != null)
+        {
+            bookToUpdate.Title = editBook.Title;
+            bookToUpdate.Year = editBook.Year;
+            bookToUpdate.AuthorId = editBook.AuthorId;
+            bookToUpdate.GenreId = editBook.GenreId;
+
+            await Db.SaveChangesAsync();
+            isEditing = false;
+            books = await Db.Books.Include(b => b.Author).Include(b => b.Genre).ToListAsync();
+        }
+    }
+
+    private async Task DeleteBook(int id)
+    {
+        var book = await Db.Books.FindAsync(id);
+        if (book != null)
+        {
+            Db.Books.Remove(book);
+            await Db.SaveChangesAsync();
+            books = await Db.Books.Include(b => b.Author).Include(b => b.Genre).ToListAsync();
+        }
+    }
+
+    private void CancelEdit()
+    {
+        isEditing = false;
+        editBook = new();
+    }
+}
